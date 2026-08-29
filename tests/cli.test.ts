@@ -139,10 +139,14 @@ describe("read output", () => {
 		expect(raw.stdout).toContain("3,=A2*2,=SUM($A$2:A2),,=SUM(B2:B5)+C5");
 	});
 
-	test("reads a workbook whose path contains spaces, quotes, and Unicode", async () => {
+	test("reads a workbook whose path contains spaces and Unicode", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "xlsx-path-test-"));
 		try {
-			const path = join(directory, 'book café "東京".xlsx');
+			const filename =
+				process.platform === "win32"
+					? "book café 東京.xlsx"
+					: 'book café "東京".xlsx';
+			const path = join(directory, filename);
 			await Bun.write(
 				path,
 				Bun.file(resolve("tests/fixtures/generated/21-text-csv-escaping.xlsx")),
