@@ -20,7 +20,7 @@
 	"homepage": "https://github.com/kklimuk/bun-xlsx#readme",
 	"bugs": "https://github.com/kklimuk/bun-xlsx/issues",
 	"type": "module",
-	"packageManager": "bun@1.3.13",
+	"packageManager": "bun@1.4.0",
 	"bin": {
 		"xlsx": "./dist/index.js"
 	},
