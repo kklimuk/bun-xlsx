@@ -1,0 +1,60 @@
+{
+	"name": "@sageling/xlsx",
+	"version": "0.1.0",
+	"description": "Read XLSX workbooks as computed or raw CSV and render them as PNG — built for AI agents.",
+	"keywords": [
+		"xlsx",
+		"excel",
+		"spreadsheet",
+		"csv",
+		"cli",
+		"ai",
+		"agent"
+	],
+	"license": "MIT",
+	"author": "Kirill Klimuk",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kklimuk/bun-xlsx.git"
+	},
+	"homepage": "https://github.com/kklimuk/bun-xlsx#readme",
+	"bugs": "https://github.com/kklimuk/bun-xlsx/issues",
+	"type": "module",
+	"packageManager": "bun@1.3.13",
+	"bin": {
+		"xlsx": "./dist/index.js"
+	},
+	"files": [
+		"dist/index.js",
+		"dist/pdfium.wasm",
+		"README.md",
+		"LICENSE",
+		"NOTICES"
+	],
+	"engines": {
+		"bun": ">=1.3.0"
+	},
+	"scripts": {
+		"check": "biome check . && knip-bun && bunx tsc --noEmit",
+		"test": "bun test",
+		"test:binary": "bun run build && XLSX_TEST_BINARY=1 bun test tests/package.test.ts",
+		"test:excel": "XLSX_TEST_EXCEL=1 bun test tests/desktop-render.test.ts",
+		"test:performance": "XLSX_TEST_PERFORMANCE=1 bun test tests/performance.test.ts",
+		"build": "bun build --compile --minify --outfile dist/xlsx src/cli.ts",
+		"build:npm": "bun build --target bun --minify --external @ironcalc/nodejs --outdir dist --entry-naming index.js --asset-naming [name].[ext] src/cli.ts",
+		"prepack": "bun run build:npm"
+	},
+	"dependencies": {
+		"@hyzyla/pdfium": "2.1.13",
+		"@ironcalc/nodejs": "0.8.3",
+		"fflate": "0.8.2",
+		"pngjs": "7.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.10",
+		"@types/bun": "^1.3.13",
+		"@types/pngjs": "^6.0.5",
+		"knip": "^6.3.0",
+		"typescript": "^6.0.2"
+	}
+}
