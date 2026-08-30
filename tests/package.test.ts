@@ -75,7 +75,9 @@ enabled("compiled binary works outside the repository", async () => {
 	const read = await run(copiedBinary, directory, "read", fixture);
 	expect(read.exitCode).toBe(0);
 	expect(read.stderr).toBe("");
-	expect(read.stdout).toContain("3,6,3,,87");
+	expect(read.stdout).toContain(
+		"3,6⟦=A2*2⟧,3⟦=SUM($A$2:A2)⟧,,87⟦=SUM(B2:B5)+C5⟧",
+	);
 });
 
 enabled(

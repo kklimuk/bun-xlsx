@@ -4,7 +4,7 @@ Usage:
   xlsx <command> [options]
 
 Commands:
-  read  Write every worksheet as CSV; IronCalc-computed values are the default
+  read  Write every worksheet as CSV; values with formulas are the default
   list  Write worksheet names, ranges, dimensions, and indexes as JSON
   render  Render workbook print pages as PNG images via Excel or LibreOffice
   upgrade  Upgrade a standalone release binary (no workbook argument)
@@ -22,13 +22,18 @@ Examples:
   xlsx read workbook.xlsx
   xlsx read workbook.xlsx > workbook.csv
   xlsx read workbook.xlsx --sheet Sheet1 > sheet.csv
-  xlsx read workbook.xlsx --values raw
+  xlsx read workbook.xlsx --values formulas
+  xlsx read workbook.xlsx --labels none
   xlsx read workbook.xlsx --max-cells 500000
 
 Options:
   --sheet NAME        Read only the exactly named worksheet
-  --values MODE       computed (default) uses IronCalc to recalculate formulas and
-                      emit formatted values; raw emits literal inputs and formulas
+  --values MODE       all (default) emits formatted values with formulas as
+                      VALUE⟦=FORMULA⟧; computed emits values only; formulas emits
+                      literal inputs and formulas. An empty formula result is
+                      emitted as ⟦=FORMULA⟧
+  --labels MODE       coordinates (default) adds Excel column letters and row
+                      numbers; none emits only worksheet cell values
   --max-cells N       Refuse any selected sheet whose rectangular used range is
 					  larger than N cells (default: 100000); formatting-only cells
 					  outside the content rectangle are ignored
@@ -39,9 +44,12 @@ Output:
   workbook order. For multi-sheet output, each block starts with \`Sheet: NAME\`
   on a standalone line and blocks have exactly two blank lines between them. A
   single selected sheet has no name header. Redirect stdout with \`>\` to save it.
-  Empty cells inside each sheet's used range are preserved.
+  Coordinate labels use the worksheet's actual rows and columns. Empty cells
+  inside each sheet's used range are preserved.
   Hidden and very-hidden sheets are included when reading all sheets. IronCalc
   does not implement every Excel function; use render for visual cross-checking.
+  Output is lossless and may contain formula-leading text; do not open CSV from
+  an untrusted workbook in spreadsheet software.
   Errors are written to stderr and return a nonzero exit status.
 `;
 

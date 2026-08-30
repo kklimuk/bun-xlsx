@@ -30,7 +30,7 @@ their package manager and should be updated with `bun add -g @sageling/xlsx` or
 
 ```sh
 xlsx read workbook.xlsx
-xlsx read workbook.xlsx --values raw
+xlsx read workbook.xlsx --values formulas
 xlsx read workbook.xlsx --sheet Sheet1
 xlsx list workbook.xlsx
 xlsx render workbook.xlsx
@@ -38,8 +38,10 @@ xlsx --version
 xlsx upgrade --dry-run
 ```
 
-`read` uses IronCalc to recalculate supported formulas and writes every worksheet as CSV to stdout,
-with a `Sheet: NAME` line and two blank lines between worksheet blocks. A single-sheet workbook or a
+`read` uses IronCalc to recalculate supported formulas and writes every worksheet as CSV to stdout.
+By default, formula cells contain both the formatted value and formula, such as
+`22640⟦=SUM(H15:H24)⟧`. Multi-sheet output has a `Sheet: NAME` line and two blank lines between
+worksheet blocks. A single-sheet workbook or a
 sheet selected with `--sheet` has no added name header. Hidden and very-hidden sheets are included.
 IronCalc does not implement every Excel function, so use `render` when visual cross-checking matters.
 Use normal shell redirection when a file is wanted:
@@ -48,10 +50,19 @@ Use normal shell redirection when a file is wanted:
 xlsx read workbook.xlsx > workbook.csv
 ```
 
-`--values raw` emits literal cell inputs, including formulas beginning with `=`. `--sheet NAME`
+`--values computed` emits values only; `--values formulas` emits literal inputs and formulas.
+`--values all` explicitly selects the default combined form. `--sheet NAME`
 limits the output to one worksheet. CSV covers each worksheet's content-bearing rectangular range,
 including empty cells inside that rectangle. Formatting-only cells outside it are ignored, avoiding
 massive output from Excel's commonly inflated declared dimensions.
+
+By default, CSV adds a `Row` column, Excel column letters, and actual worksheet row numbers so formula
+references are easy to locate. Use `--labels none` for cell-only output. To produce one conventional
+CSV table, also select one sheet (unless the workbook contains only one sheet).
+
+An empty formula result is emitted without a value prefix, for example `⟦=Engine!A3⟧`. CSV output is
+lossless and can begin with spreadsheet formula characters; do not open redirected output from an
+untrusted workbook in Excel or LibreOffice.
 
 The default 100,000-cell-per-sheet limit prevents an accidentally inflated worksheet range from
 producing unbounded output. Override it explicitly with `--max-cells` when needed. XLSX archives

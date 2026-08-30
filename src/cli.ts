@@ -6,6 +6,7 @@ import pkg from "../package.json" with { type: "json" };
 import { LIST_HELP, READ_HELP, RENDER_HELP, TOP_HELP } from "./help.js";
 import {
 	csvField,
+	type LabelMode,
 	type SheetInfo,
 	type ValueMode,
 	WorkbookReader,
@@ -33,6 +34,7 @@ function invocation(args: string[]): Invocation {
 function parseReadOptions(args: string[]): {
 	sheet?: string;
 	values: ValueMode;
+	labels: LabelMode;
 	maxCells: number;
 } {
 	const parsed = parseArgs({
@@ -41,7 +43,8 @@ function parseReadOptions(args: string[]): {
 		strict: true,
 		options: {
 			sheet: { type: "string" },
-			values: { type: "string", default: "computed" },
+			values: { type: "string", default: "all" },
+			labels: { type: "string", default: "coordinates" },
 			"max-cells": { type: "string", default: "100000" },
 			help: { type: "boolean", short: "h" },
 		},
@@ -51,12 +54,15 @@ function parseReadOptions(args: string[]): {
 		throw new HelpShown();
 	}
 	const values = parsed.values.values;
-	if (values !== "raw" && values !== "computed")
-		throw new Error("--values must be computed or raw");
+	if (values !== "computed" && values !== "formulas" && values !== "all")
+		throw new Error("--values must be all, computed, or formulas");
+	const labels = parsed.values.labels;
+	if (labels !== "coordinates" && labels !== "none")
+		throw new Error("--labels must be coordinates or none");
 	const maxCells = Number(parsed.values["max-cells"]);
 	if (!Number.isSafeInteger(maxCells) || maxCells < 1)
 		throw new Error("--max-cells must be a positive integer");
-	return { sheet: parsed.values.sheet, values, maxCells };
+	return { sheet: parsed.values.sheet, values, labels, maxCells };
 }
 
 function parseListOptions(args: string[]): void {
@@ -152,7 +158,7 @@ export async function main(args: string[]): Promise<number> {
 		if (call.command === "list") {
 			parseListOptions(call.args);
 			await assertFile(file);
-			const workbook = new WorkbookReader(file, "raw");
+			const workbook = new WorkbookReader(file, "formulas");
 			process.stdout.write(
 				`${JSON.stringify({ file, sheets: workbook.sheets }, null, 2)}\n`,
 			);
@@ -178,7 +184,7 @@ export async function main(args: string[]): Promise<number> {
 			if (includeSheetNames)
 				process.stdout.write(`Sheet: ${csvField(sheet.name)}\n`);
 			process.stdout.write(
-				workbook.toCsv(sheet, options.values, options.maxCells),
+				workbook.toCsv(sheet, options.maxCells, options.labels),
 			);
 		}
 		return 0;

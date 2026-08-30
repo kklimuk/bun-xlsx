@@ -10,6 +10,17 @@ describe("csvField", () => {
 });
 
 describe("worksheet structure", () => {
+	test("encodes Excel column names across rollover boundaries", () => {
+		expect([
+			testing.columnName(0),
+			testing.columnName(25),
+			testing.columnName(26),
+			testing.columnName(51),
+			testing.columnName(52),
+			testing.columnName(16_383),
+		]).toEqual(["A", "Z", "AA", "AZ", "BA", "XFD"]);
+	});
+
 	test("decodes XML entities and worksheet ranges", () => {
 		expect(testing.decodeXml("A&amp;B &#x1f600; &#65; &quot;x&quot;")).toBe(
 			'A&B 😀 A "x"',

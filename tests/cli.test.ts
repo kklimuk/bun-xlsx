@@ -113,7 +113,7 @@ describe("read output", () => {
 	const fixture = "tests/fixtures/generated/25-hidden-and-very-hidden.xlsx";
 
 	test("labels multiple worksheet blocks and separates them with two blank lines", async () => {
-		const result = await run("read", fixture);
+		const result = await run("read", fixture, "--labels", "none");
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toBe("");
 		expect(result.stdout).toBe(
@@ -121,19 +121,46 @@ describe("read output", () => {
 		);
 	});
 
+	test("adds coordinate labels to every worksheet block by default", async () => {
+		const result = await run("read", fixture);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe(
+			"Sheet: Visible\nRow,A,B\n1,sheet,visibility\n2,Visible,visible\n\n\nSheet: Hidden\nRow,A\n1,hidden value\n\n\nSheet: Very Hidden\nRow,A\n1,very hidden value\n",
+		);
+	});
+
 	test("keeps explicitly selected sheet output as plain CSV", async () => {
 		const result = await run("read", fixture, "--sheet", "Hidden");
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toBe("");
+		expect(result.stdout).toBe("Row,A\n1,hidden value\n");
+	});
+
+	test("can disable coordinate labels", async () => {
+		const result = await run(
+			"read",
+			fixture,
+			"--sheet",
+			"Hidden",
+			"--labels",
+			"none",
+		);
+		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toBe("hidden value\n");
 	});
 
-	test("selects raw versus computed values", async () => {
+	test("selects formulas versus computed values", async () => {
 		const formulaFixture =
 			"tests/fixtures/generated/22-formulas-without-cache.xlsx";
-		const computed = await run("read", formulaFixture);
-		const raw = await run("read", formulaFixture, "--values", "raw");
-		expect(computed.exitCode).toBe(0);
+		const allByDefault = await run("read", formulaFixture);
+		const allExplicit = await run("read", formulaFixture, "--values", "all");
+		const computed = await run("read", formulaFixture, "--values", "computed");
+		const formulas = await run("read", formulaFixture, "--values", "formulas");
+		expect(allByDefault.exitCode).toBe(0);
+		expect(allByDefault.stdout).toContain(
+			"3,6⟦=A2*2⟧,3⟦=SUM($A$2:A2)⟧,,87⟦=SUM(B2:B5)+C5⟧",
+		);
+		expect(allExplicit.stdout).toBe(allByDefault.stdout);
 		expect(computed.stdout).toContain("3,6,3,,87");
 		expect(raw.exitCode).toBe(0);
 		expect(raw.stdout).toContain("3,=A2*2,=SUM($A$2:A2),,=SUM(B2:B5)+C5");
@@ -206,7 +233,15 @@ describe("validation and failures", () => {
 		{ args: ["read", "missing.xlsx", "--wat"], message: "Unknown option" },
 		{
 			args: ["read", "missing.xlsx", "--values", "cached"],
-			message: "--values must be computed or raw",
+			message: "--values must be all, computed, or formulas",
+		},
+		{
+			args: ["read", "missing.xlsx", "--values", "raw"],
+			message: "--values must be all, computed, or formulas",
+		},
+		{
+			args: ["read", "missing.xlsx", "--labels", "cells"],
+			message: "--labels must be coordinates or none",
 		},
 		{
 			args: ["read", "missing.xlsx", "--max-cells", "0"],

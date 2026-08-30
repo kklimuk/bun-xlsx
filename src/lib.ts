@@ -11,7 +11,8 @@ import { Model } from "@ironcalc/nodejs";
 import { unzipSync, zipSync } from "fflate";
 import { MAX_INPUT_BYTES } from "./limits.js";
 
-export type ValueMode = "raw" | "computed";
+export type ValueMode = "computed" | "formulas" | "all";
+export type LabelMode = "coordinates" | "none";
 
 export interface SheetInfo {
 	index: number;
@@ -35,7 +36,10 @@ export class WorkbookReader {
 	private readonly model: Model;
 	private readonly ranges: Array<Range | null>;
 
-	constructor(path: string, mode: ValueMode) {
+	constructor(
+		path: string,
+		private readonly mode: ValueMode,
+	) {
 		if (statSync(path).size > MAX_INPUT_BYTES)
 			throw new Error(
 				"Workbook exceeds the 256 MiB compressed-size safety limit",
@@ -45,7 +49,7 @@ export class WorkbookReader {
 		const files = unzipSync(data);
 		const structuralRanges = readSheetRanges(files);
 		this.model = loadIronCalcModel(path, files);
-		if (mode === "computed") this.model.evaluate();
+		if (this.mode !== "formulas") this.model.evaluate();
 
 		const properties =
 			this.model.getWorksheetsProperties() as SheetProperties[];
@@ -72,32 +76,49 @@ export class WorkbookReader {
 		});
 	}
 
-	toCsv(sheet: SheetInfo, mode: ValueMode, maxCells: number): string {
+	toCsv(
+		sheet: SheetInfo,
+		maxCells: number,
+		labels: LabelMode = "coordinates",
+	): string {
 		this.assertCellLimit(sheet, maxCells);
 		const range = this.ranges[sheet.index];
 		if (!range) return "";
 
 		const lines: string[] = [];
+		if (labels === "coordinates") {
+			const columns = ["Row"];
+			for (
+				let column = range.startColumn;
+				column <= range.endColumn;
+				column += 1
+			)
+				columns.push(columnName(column));
+			lines.push(columns.join(","));
+		}
 		for (let row = range.startRow; row <= range.endRow; row += 1) {
-			const fields: string[] = [];
+			const fields: string[] =
+				labels === "coordinates" ? [String(row + 1)] : [];
 			for (
 				let column = range.startColumn;
 				column <= range.endColumn;
 				column += 1
 			) {
-				const value =
-					mode === "raw"
-						? this.model.getCellContent(sheet.index, row + 1, column + 1)
-						: this.model.getFormattedCellValue(
-								sheet.index,
-								row + 1,
-								column + 1,
-							);
+				const value = this.cellValue(sheet.index, row + 1, column + 1);
 				fields.push(csvField(value));
 			}
 			lines.push(fields.join(","));
 		}
 		return `${lines.join("\n")}\n`;
+	}
+
+	private cellValue(sheet: number, row: number, column: number): string {
+		if (this.mode === "formulas")
+			return this.model.getCellContent(sheet, row, column);
+		const computed = this.model.getFormattedCellValue(sheet, row, column);
+		if (this.mode === "computed") return computed;
+		const formula = this.model.getCellFormula(sheet, row, column);
+		return formula === null ? computed : `${computed}⟦${formula}⟧`;
 	}
 
 	assertCellLimit(sheet: SheetInfo, maxCells: number): void {
@@ -117,11 +138,7 @@ function readSheetRanges(
 	const workbook = textFile(files, "xl/workbook.xml");
 	const relationships = textFile(files, "xl/_rels/workbook.xml.rels");
 	const targets = new Map<string, string>();
-	for (const match of relationships.matchAll(
-		/<Relationship\b([^>]*)\/?\s*>/g,
-	)) {
-		const attributes = match[1];
-		if (attributes === undefined) continue;
+	for (const { attributes } of startTags(relationships, "Relationship")) {
 		const id = attribute(attributes, "Id");
 		const target = attribute(attributes, "Target");
 		if (id && target && !target.includes(":"))
@@ -129,9 +146,7 @@ function readSheetRanges(
 	}
 
 	const result = new Map<string, Range | null>();
-	for (const match of workbook.matchAll(/<sheet\b([^>]*)\/?\s*>/g)) {
-		const attributes = match[1];
-		if (attributes === undefined) continue;
+	for (const { attributes } of startTags(workbook, "sheet")) {
 		const name = attribute(attributes, "name");
 		const relationshipId = attribute(attributes, "r:id");
 		if (!name || !relationshipId) continue;
@@ -295,7 +310,7 @@ function shift1904DateCells(
 	);
 }
 
-function validateZipSizes(data: Uint8Array): void {
+export function validateZipSizes(data: Uint8Array): void {
 	const minimum = Math.max(0, data.length - 65_557);
 	let end = -1;
 	for (let offset = data.length - 22; offset >= minimum; offset -= 1) {
@@ -349,13 +364,57 @@ function textFile(files: Record<string, Uint8Array>, name: string): string {
 	return new TextDecoder("utf-8", { fatal: true }).decode(value);
 }
 
-function attribute(source: string, name: string): string | null {
+export function attribute(source: string, name: string): string | null {
 	const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const value = new RegExp(`(?:^|\\s)${escaped}="([^"]*)"`).exec(source)?.[1];
+	const match = new RegExp(`(?:^|\\s)${escaped}=(?:"([^"]*)"|'([^']*)')`).exec(
+		source,
+	);
+	const value = match?.[1] ?? match?.[2];
 	return value === undefined ? null : decodeXml(value);
 }
 
-function decodeXml(value: string): string {
+export interface XmlStartTag {
+	attributes: string;
+	end: number;
+	start: number;
+	text: string;
+}
+
+export function startTags(source: string, name: string): XmlStartTag[] {
+	const tags: XmlStartTag[] = [];
+	const prefix = `<${name}`;
+	let searchFrom = 0;
+	while (searchFrom < source.length) {
+		const start = source.indexOf(prefix, searchFrom);
+		if (start < 0) break;
+		const boundary = source[start + prefix.length];
+		if (boundary && !/[\s/>]/.test(boundary)) {
+			searchFrom = start + prefix.length;
+			continue;
+		}
+		let quote = "";
+		let end = start + prefix.length;
+		for (; end < source.length; end += 1) {
+			const character = source[end];
+			if ((character === '"' || character === "'") && !quote) quote = character;
+			else if (character === quote) quote = "";
+			else if (character === ">" && !quote) break;
+		}
+		if (end >= source.length)
+			throw new Error(`Invalid XLSX: unterminated <${name}> tag`);
+		const text = source.slice(start, end + 1);
+		tags.push({
+			attributes: text.slice(prefix.length, -1),
+			end: end + 1,
+			start,
+			text,
+		});
+		searchFrom = end + 1;
+	}
+	return tags;
+}
+
+export function decodeXml(value: string): string {
 	return value.replace(
 		/&(?:#x([0-9a-f]+)|#([0-9]+)|amp|lt|gt|quot|apos);/gi,
 		(entity, hex: string, decimal: string) => {
@@ -441,17 +500,16 @@ function decodeCell(reference: string): { row: number; column: number } {
 }
 
 function encodeRange(range: Range): string {
-	const cell = (row: number, column: number) => {
-		let letters = "";
-		for (
-			let value = column + 1;
-			value > 0;
-			value = Math.floor((value - 1) / 26)
-		)
-			letters = String.fromCharCode(((value - 1) % 26) + 65) + letters;
-		return `${letters}${row + 1}`;
-	};
+	const cell = (row: number, column: number) =>
+		`${columnName(column)}${row + 1}`;
 	return `${cell(range.startRow, range.startColumn)}:${cell(range.endRow, range.endColumn)}`;
+}
+
+function columnName(column: number): string {
+	let letters = "";
+	for (let value = column + 1; value > 0; value = Math.floor((value - 1) / 26))
+		letters = String.fromCharCode(((value - 1) % 26) + 65) + letters;
+	return letters;
 }
 
 export function csvField(value: string): string {
@@ -460,10 +518,12 @@ export function csvField(value: string): string {
 }
 
 export const testing = {
+	columnName,
 	decodeRange,
 	decodeXml,
 	isDateFormat,
 	normalizeWorkbookTarget,
 	rangeFromCells,
+	startTags,
 	validateZipSizes,
 };

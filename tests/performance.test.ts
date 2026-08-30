@@ -13,7 +13,7 @@ enabled("formula-heavy financial model stays within a generous budget", () => {
 		),
 		"computed",
 	);
-	for (const sheet of reader.sheets) reader.toCsv(sheet, "computed", 100_000);
+	for (const sheet of reader.sheets) reader.toCsv(sheet, 100_000, "none");
 	const elapsed = performance.now() - started;
 	expect(elapsed).toBeLessThan(5_000);
 	expect(process.memoryUsage().rss).toBeLessThan(2 * 1024 * 1024 * 1024);
@@ -32,8 +32,8 @@ enabled(
 				const reader = new WorkbookReader(path, "computed");
 				reader.toCsv(
 					reader.sheets[0] as NonNullable<(typeof reader.sheets)[0]>,
-					"computed",
 					100_000,
+					"none",
 				);
 			}),
 		);
