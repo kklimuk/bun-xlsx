@@ -58,8 +58,8 @@ jobs:
         run: |
           chmod +x "${{ matrix.name }}"
           ./${{ matrix.name }} --version
-          ./${{ matrix.name }} read tests/fixtures/generated/22-formulas-without-cache.xlsx | grep -F '3,6,3,,87'
-          ./${{ matrix.name }} read tests/fixtures/generated/22-formulas-without-cache.xlsx --values raw | grep -F '=A2*2'
+          ./${{ matrix.name }} read tests/fixtures/generated/22-formulas-without-cache.xlsx --values computed --labels none | grep -F '3,6,3,,87'
+          ./${{ matrix.name }} read tests/fixtures/generated/22-formulas-without-cache.xlsx --values formulas --labels none | grep -F '=A2*2'
           ./${{ matrix.name }} list tests/fixtures/generated/25-hidden-and-very-hidden.xlsx | grep -F '"Very Hidden"'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

@@ -1,6 +1,6 @@
 {
 	"name": "@sageling/xlsx",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"description": "Read XLSX workbooks as formula-aware CSV and render them as PNG — built for AI agents.",
 	"keywords": [
 		"xlsx",

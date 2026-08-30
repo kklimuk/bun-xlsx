@@ -147,7 +147,7 @@ to `main`, then push the matching tag (for example `v0.1.0`). The tag triggers b
 GitHub binary release and npm trusted publishing. Do not reuse or move a published tag.
 
 The GitHub repository is `kklimuk/bun-xlsx`; the npm package is `@sageling/xlsx`. Configure npm's
-trusted publisher for repository `kklimuk/bun-xlsx`, workflow `release.yml`, and GitHub environment
+trusted publisher for repository `kklimuk/bun-xlsx`, workflow `publish.yml`, and GitHub environment
 `Publishing`. If npm requires the new package to exist before that publisher can be configured,
 publish the initial version manually, configure trusted publishing, then bump the version before
 creating the first automated release tag.
