@@ -73,14 +73,18 @@ larger than 256 MiB compressed or expanded beyond 256 MiB are refused before dec
 CSV cannot expose formatting, charts, merged-cell layout, print areas, or other visual structure.
 `render` exports with Microsoft Excel when it is available on macOS. Excel applies a landscape page
 setup to every sheet in a staged copy. LibreOffice is the cross-platform fallback and currently
-preserves the workbook's saved print orientation. Bundled PDFium writes a PNG for each page:
+preserves the workbook's saved print orientation. Bundled PDFium writes a PNG for each page. A
+specific sheet can be selected while retaining the same PNG output:
 
 ```sh
 xlsx render workbook.xlsx
 xlsx render workbook.xlsx --out ./pages --pages 1-3 --dpi 200
+xlsx render workbook.xlsx --sheet Sheet1 --out ./sheet1-pages
 ```
 
-The default output directory is `./<workbook>-pages`, and rendered image paths are printed to stdout.
+The default output directory is `./<workbook>-pages`, or `./<workbook>-<sheet>-pages` when selecting
+a sheet. Characters unsafe in path components are replaced with underscores. Image paths are printed
+to stdout.
 Safety limits reject PDFs over 256 MiB, selections over 200 pages, pages over 50 megapixels, total
 renders over 500 megapixels, or PNG output over 512 MiB.
 Rendering passes the workbook to an installed Office application; isolate that application when

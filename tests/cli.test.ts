@@ -28,7 +28,7 @@ describe("help", () => {
 		expect(result.stdout).toContain("xlsx <command> [options]");
 		expect(result.stdout).toContain("read  Write every worksheet");
 		expect(result.stdout).toContain("list  Write worksheet names");
-		expect(result.stdout).toContain("render  Render workbook print pages");
+		expect(result.stdout).toContain("render  Render workbook or worksheet");
 		expect(result.stdout).toContain(
 			"upgrade  Upgrade a standalone release binary",
 		);
@@ -65,7 +65,7 @@ describe("help", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toBe("");
 		expect(result.stdout).toContain(
-			"xlsx render — render workbook print pages as images",
+			"xlsx render — render workbook print pages as PNG images",
 		);
 		expect(result.stdout).toContain("--pages N[-M]");
 		expect(result.stdout).toContain("Microsoft Excel is used when available");
@@ -162,8 +162,19 @@ describe("read output", () => {
 		);
 		expect(allExplicit.stdout).toBe(allByDefault.stdout);
 		expect(computed.stdout).toContain("3,6,3,,87");
-		expect(raw.exitCode).toBe(0);
-		expect(raw.stdout).toContain("3,=A2*2,=SUM($A$2:A2),,=SUM(B2:B5)+C5");
+		expect(formulas.stdout).toContain("3,=A2*2,=SUM($A$2:A2),,=SUM(B2:B5)+C5");
+	});
+
+	test("rejects an explicitly empty render sheet before launching a renderer", async () => {
+		const result = await run(
+			"render",
+			"tests/fixtures/generated/25-hidden-and-very-hidden.xlsx",
+			"--sheet",
+			"",
+		);
+		expect(result.exitCode).toBe(1);
+		expect(result.stdout).toBe("");
+		expect(result.stderr).toContain("Unknown worksheet");
 	});
 
 	test("reads a workbook whose path contains spaces and Unicode", async () => {

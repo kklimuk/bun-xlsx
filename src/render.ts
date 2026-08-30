@@ -4,9 +4,11 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 	statSync,
+	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
@@ -14,7 +16,9 @@ import { PDFiumLibrary } from "@hyzyla/pdfium";
 import pdfiumWasmPath from "@hyzyla/pdfium/dist/pdfium.wasm" with {
 	type: "file",
 };
+import { unzipSync, zipSync } from "fflate";
 import { PNG } from "pngjs";
+import { attribute, startTags, validateZipSizes } from "./lib.js";
 import { MAX_INPUT_BYTES } from "./limits.js";
 
 export type PageRange = { first: number; last: number };
@@ -23,6 +27,7 @@ export interface RenderOptions {
 	outDir: string;
 	dpi: number;
 	range?: PageRange;
+	sheet?: string;
 }
 
 const MAX_RENDERED_PAGES = 200;
@@ -38,18 +43,73 @@ export async function renderWorkbook(
 		throw new Error("Workbook exceeds the 256 MiB render-input safety limit");
 	const workspace = mkdtempSync(join(tmpdir(), "xlsx-render-"));
 	try {
+		const renderInput =
+			options.sheet !== undefined
+				? stageSelectedSheet(workbookPath, workspace, options.sheet)
+				: workbookPath;
 		const pdfPath = join(workspace, "workbook.pdf");
 		const renderer = requestedRenderer();
-		if (renderer === "excel") await convertWithExcel(workbookPath, pdfPath);
-		else await convertWithLibreOffice(workbookPath, pdfPath, workspace);
+		if (renderer === "excel") await convertWithExcel(renderInput, pdfPath);
+		else await convertWithLibreOffice(renderInput, pdfPath, workspace);
 		const stagedPages = await renderPdfPages(pdfPath, {
-			...options,
+			dpi: options.dpi,
+			range: options.range,
 			outDir: join(workspace, "pages"),
 		});
 		return await publishRenderedPages(stagedPages, options.outDir);
 	} finally {
 		rmSync(workspace, { recursive: true, force: true });
 	}
+}
+
+function stageSelectedSheet(
+	input: string,
+	workspace: string,
+	sheet: string,
+): string {
+	const data = new Uint8Array(readFileSync(input));
+	validateZipSizes(data);
+	const files = unzipSync(data);
+	const name = "xl/workbook.xml";
+	const bytes = files[name];
+	if (!bytes) throw new Error("Workbook is missing xl/workbook.xml");
+	const xml = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	const tags = startTags(xml, "sheet");
+	const names = tags.map((tag) => attribute(tag.attributes, "name") ?? "");
+	const selectedIndex = names.indexOf(sheet);
+	if (selectedIndex < 0)
+		throw new Error(
+			`Unknown worksheet ${JSON.stringify(sheet)}; available: ${names.map((value) => JSON.stringify(value)).join(", ")}`,
+		);
+	if (names.lastIndexOf(sheet) !== selectedIndex)
+		throw new Error(
+			`Workbook contains duplicate worksheet name ${JSON.stringify(sheet)}`,
+		);
+	let stagedXml = xml;
+	for (let index = tags.length - 1; index >= 0; index -= 1) {
+		const tag = tags[index];
+		if (!tag) continue;
+		const withoutState = tag.text.replace(/\s+state=(?:"[^"]*"|'[^']*')/, "");
+		const replacement =
+			index === selectedIndex
+				? withoutState
+				: withoutState.replace(/\s*(\/?>)$/, ' state="veryHidden"$1');
+		stagedXml =
+			stagedXml.slice(0, tag.start) + replacement + stagedXml.slice(tag.end);
+	}
+	stagedXml = /\bactiveTab=(?:"[0-9]+"|'[0-9]+')/.test(stagedXml)
+		? stagedXml.replace(
+				/\bactiveTab=(?:"[0-9]+"|'[0-9]+')/,
+				`activeTab="${selectedIndex}"`,
+			)
+		: stagedXml.replace(
+				/<workbookView\b/,
+				`<workbookView activeTab="${selectedIndex}"`,
+			);
+	files[name] = new TextEncoder().encode(stagedXml);
+	const staged = join(workspace, "selected-sheet.xlsx");
+	writeFileSync(staged, zipSync(files, { level: 6 }), { mode: 0o600 });
+	return staged;
 }
 
 function requestedRenderer(): "excel" | "libreoffice" {
@@ -174,7 +234,7 @@ async function convertWithLibreOffice(
 
 export async function renderPdfPages(
 	pdfPath: string,
-	options: RenderOptions,
+	options: { outDir: string; dpi: number; range?: PageRange },
 ): Promise<string[]> {
 	mkdirSync(options.outDir, { recursive: true });
 	if (statSync(pdfPath).size > MAX_INPUT_BYTES)
@@ -320,3 +380,5 @@ async function findSoffice(): Promise<string | null> {
 		? output.split(/\r?\n/)[0]?.trim() || null
 		: null;
 }
+
+export const testing = { stageSelectedSheet };

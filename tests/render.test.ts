@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { unzipSync, zipSync } from "fflate";
 import { PNG } from "pngjs";
+import { WorkbookReader } from "../src/lib.js";
 import {
 	publishRenderedPages,
 	renderPdfPages,
 	renderWorkbook,
+	testing,
 } from "../src/render.js";
 
 const temporaryDirectories: string[] = [];
@@ -118,6 +121,135 @@ describe("PDFium rendering", () => {
 			),
 		).rejects.toThrow();
 		expect(readdirSync(output)).toEqual([]);
+	});
+});
+
+describe("worksheet selection", () => {
+	test("preserves sheet order and makes every unselected sheet very hidden", () => {
+		const directory = temporaryDirectory();
+		const staged = testing.stageSelectedSheet(
+			join(
+				import.meta.dir,
+				"fixtures/generated/25-hidden-and-very-hidden.xlsx",
+			),
+			directory,
+			"Hidden",
+		);
+		const workbookXml = new TextDecoder().decode(
+			unzipSync(new Uint8Array(readFileSync(staged)))["xl/workbook.xml"],
+		);
+		const sheets = [...workbookXml.matchAll(/<sheet\b[^>]*\/?\s*>/g)].map(
+			(match) => match[0],
+		);
+		expect(sheets.map((tag) => /name="([^"]*)"/.exec(tag)?.[1])).toEqual([
+			"Visible",
+			"Hidden",
+			"Very Hidden",
+		]);
+		expect(sheets[1]).not.toContain("state=");
+		expect(sheets[0]).toContain('state="veryHidden"');
+		expect(sheets[2]).toContain('state="veryHidden"');
+		expect(workbookXml).toContain('activeTab="1"');
+	});
+
+	test("accepts single-quoted sheet attributes", async () => {
+		const directory = temporaryDirectory();
+		const source = join(
+			import.meta.dir,
+			"fixtures/generated/25-hidden-and-very-hidden.xlsx",
+		);
+		const files = unzipSync(new Uint8Array(readFileSync(source)));
+		const workbookName = "xl/workbook.xml";
+		const xml = new TextDecoder().decode(files[workbookName]);
+		files[workbookName] = new TextEncoder().encode(
+			xml.replace(/<sheet\b[^>]*name="Hidden"[^>]*\/>/, (tag) =>
+				tag.replaceAll(/="([^"]*)"/g, "='$1'"),
+			),
+		);
+		const quoted = join(directory, "single-quotes.xlsx");
+		await Bun.write(quoted, zipSync(files));
+		const staged = testing.stageSelectedSheet(quoted, directory, "Hidden");
+		const stagedXml = new TextDecoder().decode(
+			unzipSync(new Uint8Array(readFileSync(staged)))[workbookName],
+		);
+		expect(stagedXml).toContain("name='Hidden'");
+		expect(stagedXml).not.toContain("name='Hidden' state=");
+	});
+
+	test("accepts a worksheet name containing a greater-than sign", async () => {
+		const directory = temporaryDirectory();
+		const source = join(
+			import.meta.dir,
+			"fixtures/generated/25-hidden-and-very-hidden.xlsx",
+		);
+		const files = unzipSync(new Uint8Array(readFileSync(source)));
+		const workbookName = "xl/workbook.xml";
+		const xml = new TextDecoder().decode(files[workbookName]);
+		files[workbookName] = new TextEncoder().encode(
+			xml.replace('name="Hidden"', 'name="A>B"'),
+		);
+		const unusual = join(directory, "greater-than.xlsx");
+		await Bun.write(unusual, zipSync(files));
+		expect(new WorkbookReader(unusual, "formulas").sheets[1]?.name).toBe("A>B");
+		const staged = testing.stageSelectedSheet(unusual, directory, "A>B");
+		const stagedXml = new TextDecoder().decode(
+			unzipSync(new Uint8Array(readFileSync(staged)))[workbookName],
+		);
+		expect(stagedXml).toContain('name="A>B"');
+		expect(stagedXml).not.toContain('name="A>B" state=');
+	});
+
+	test("hides paired as well as self-closing worksheet elements", async () => {
+		const directory = temporaryDirectory();
+		const source = join(
+			import.meta.dir,
+			"fixtures/generated/25-hidden-and-very-hidden.xlsx",
+		);
+		const files = unzipSync(new Uint8Array(readFileSync(source)));
+		const workbookName = "xl/workbook.xml";
+		const xml = new TextDecoder().decode(files[workbookName]);
+		files[workbookName] = new TextEncoder().encode(
+			xml.replace(/<sheet\b([^>]*)\/>/g, "<sheet$1></sheet>"),
+		);
+		const paired = join(directory, "paired-sheets.xlsx");
+		await Bun.write(paired, zipSync(files));
+		const staged = testing.stageSelectedSheet(paired, directory, "Hidden");
+		const stagedXml = new TextDecoder().decode(
+			unzipSync(new Uint8Array(readFileSync(staged)))[workbookName],
+		);
+		expect(stagedXml).toMatch(
+			/<sheet\b[^>]*name="Visible"[^>]*state="veryHidden"[^>]*>/,
+		);
+		expect(stagedXml).toMatch(
+			/<sheet\b[^>]*name="Hidden"(?![^>]*state=)[^>]*>/,
+		);
+	});
+
+	test("rejects oversized expanded archives before inflating them", async () => {
+		const directory = temporaryDirectory();
+		const oversized = join(directory, "oversized.xlsx");
+		const bytes = Buffer.alloc(68);
+		bytes.writeUInt32LE(0x02014b50, 0);
+		bytes.writeUInt32LE(256 * 1024 * 1024 + 1, 24);
+		bytes.writeUInt32LE(0x06054b50, 46);
+		bytes.writeUInt16LE(1, 56);
+		await Bun.write(oversized, bytes);
+		expect(() =>
+			testing.stageSelectedSheet(oversized, directory, "Sheet1"),
+		).toThrow("expands beyond the 256 MiB safety limit");
+	});
+
+	test("rejects an unknown worksheet before launching a renderer", () => {
+		expect(() =>
+			testing.stageSelectedSheet(
+				join(
+					import.meta.dir,
+					"fixtures/generated/25-hidden-and-very-hidden.xlsx",
+				),
+				temporaryDirectory(),
+				"Missing",
+			),
+		).toThrow("Unknown worksheet");
 	});
 });
 

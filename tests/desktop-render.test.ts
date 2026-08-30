@@ -47,7 +47,10 @@ enabled(
 			),
 		);
 
-		const pages = await renderWorkbook(workbook, { outDir: output, dpi: 72 });
+		const pages = await renderWorkbook(workbook, {
+			outDir: output,
+			dpi: 72,
+		});
 
 		expect(await sha256(workbook)).toBe(beforeHash);
 		expect(readdirSync(output)).toEqual(["page-001.png"]);

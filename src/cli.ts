@@ -85,6 +85,7 @@ function parseRenderOptions(args: string[], file: string) {
 		strict: true,
 		options: {
 			out: { type: "string" },
+			sheet: { type: "string" },
 			dpi: { type: "string", default: "150" },
 			pages: { type: "string" },
 			help: { type: "boolean", short: "h" },
@@ -100,13 +101,29 @@ function parseRenderOptions(args: string[], file: string) {
 	const range = parsed.values.pages
 		? parsePageRange(parsed.values.pages)
 		: undefined;
+	const workbookName = basename(file, extname(file));
+	const sheetSuffix = parsed.values.sheet
+		? `-${safePathComponent(parsed.values.sheet)}`
+		: "";
 	return {
 		outDir: resolve(
-			parsed.values.out ?? `./${basename(file, extname(file))}-pages`,
+			parsed.values.out ?? `./${workbookName}${sheetSuffix}-pages`,
 		),
 		dpi,
 		range,
+		sheet: parsed.values.sheet,
 	};
+}
+
+function safePathComponent(value: string): string {
+	const unsafe = '<>:"/\\|?*';
+	return [...value]
+		.map((character) =>
+			unsafe.includes(character) || character.charCodeAt(0) < 32
+				? "_"
+				: character,
+		)
+		.join("");
 }
 
 function parsePageRange(value: string): PageRange {
